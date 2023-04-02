@@ -3,29 +3,33 @@ package main
 import (
 	"fmt"
 	"log"
+	"net/http"
 	"sync"
 	"time"
 )
 
 func main() {
-	log.Printf("Now")
-	fk := "first key"
-	sk := "second key"
-	cache := NewCache()
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		log.Printf("Now")
+		fk := "first key"
+		sk := "second key"
+		cache := NewCache()
 
-	cache.Put(fk, "first value", time.Now().Add(2*time.Second).UnixNano())
-	s := cache.Get(fk)
-	fmt.Println("Before", s)
+		cache.Put(fk, "first value", time.Now().Add(2*time.Second).UnixNano())
+		s := cache.Get(fk)
+		fmt.Println("Before", s)
 
-	time.Sleep(5 * time.Second)
+		time.Sleep(5 * time.Second)
 
-	s = cache.Get(fk)
-	fmt.Println("After", s)
+		s = cache.Get(fk)
+		fmt.Println("After", s)
 
-	if len(s) == 0 {
-		cache.Put(sk, "second value", time.Now().Add(100*time.Second).UnixNano())
-	}
-	fmt.Println(cache.Get(sk))
+		if len(s) == 0 {
+			cache.Put(sk, "second value", time.Now().Add(100*time.Second).UnixNano())
+		}
+		fmt.Println(cache.Get(sk))
+	})
+	http.ListenAndServe(":8080", nil)
 }
 
 type Cache struct {
