@@ -7,13 +7,12 @@ import (
 	"time"
 )
 
-var cache = &Cache{}
-
 func main() {
 	log.Printf("Now")
-
 	fk := "first key"
 	sk := "second key"
+	cache := NewCache()
+
 	cache.Put(fk, "first value", time.Now().Add(2*time.Second).UnixNano())
 	s := cache.Get(fk)
 	fmt.Println("Before", s)
@@ -30,35 +29,61 @@ func main() {
 }
 
 type Cache struct {
-	Value   sync.Map
+	Items map[string]*Item
+	mu    sync.Mutex
+}
+
+type Item struct {
+	Value   string
 	Expires int64
 }
 
-func (c *Cache) Expired(time int64) bool {
-	if c.Expires == 0 {
+func NewCache() *Cache {
+	cache := &Cache{Items: make(map[string]*Item)}
+	go func() {
+		t := time.NewTicker(time.Second)
+		defer t.Stop()
+		for {
+			select {
+			case <-t.C:
+				cache.mu.Lock()
+				for k, v := range cache.Items {
+					if v.Expired(time.Now().UnixNano()) {
+						log.Printf("%v has expires at %d", cache.Items, time.Now().UnixNano())
+						delete(cache.Items, k)
+					}
+				}
+				cache.mu.Unlock()
+			}
+		}
+	}()
+	return cache
+}
+
+func (i *Item) Expired(time int64) bool {
+	if i.Expires == 0 {
 		return false
 	}
-	return time > c.Expires
+	return time > i.Expires
 }
 
 func (c *Cache) Get(key string) string {
-	if c.Expired(time.Now().UnixNano()) {
-		log.Printf("%s has expired", key)
-		return ""
-	}
-	v, ok := c.Value.Load(key)
+	c.mu.Lock()
 	var s string
-	if ok {
-		s, ok = v.(string)
-		if !ok {
-			log.Panicf("%s doesn't exist", key)
-			return ""
-		}
+	if item, ok := c.Items[key]; ok {
+		s = item.Value
 	}
+	c.mu.Unlock()
 	return s
 }
 
-func (c *Cache) Put(key, value string, expired int64) {
-	c.Value.Store(key, value)
-	c.Expires = expired
+func (c *Cache) Put(key, value string, expires int64) {
+	c.mu.Lock()
+	if _, ok := c.Items[key]; !ok {
+		c.Items[key] = &Item{
+			Value:   value,
+			Expires: expires,
+		}
+	}
+	c.mu.Unlock()
 }
